@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopEase Checkout (Build 1.0)</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#f4f6fa;color:#222;font-size:15px}
+header{background:#1f3864;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+header button{margin-left:8px}
+main{max-width:900px;margin:0 auto;padding:12px 12px 12px}
+section{background:#fff;border:1px solid #d5dbe6;border-radius:6px;padding:12px;margin-bottom:12px}
+h2{margin:0 0 8px;font-size:17px;color:#1f3864}
+button{background:#1f3864;color:#fff;border:0;border-radius:4px;padding:7px 12px;cursor:pointer;font-size:14px}
+button:disabled{background:#9aa5b8;cursor:not-allowed}
+input[type=text],input[type=password],select{padding:6px;border:1px solid #aab;border-radius:4px;font-size:14px}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid #e3e7ef;padding:6px 4px;text-align:left;font-size:14px}
+.msg{min-height:18px;margin:6px 0;font-weight:bold;color:#9b1c1c}
+.msg.ok{color:#1b6e2d}
+.oos{color:#fff;background:#b42318;padding:1px 6px;border-radius:3px;font-size:12px;margin-left:6px}
+.prod{display:inline-block;width:160px;border:1px solid #d5dbe6;border-radius:6px;padding:8px;margin:0 8px 8px 0;vertical-align:top}
+.row{display:flex;justify-content:space-between;padding:2px 0}
+.row.total{font-weight:bold;border-top:1px solid #333;margin-top:4px;padding-top:4px}
+.field{margin:6px 0}
+.field label{display:inline-block;min-width:80px}
+@media (max-width:480px){
+  .prod{width:100%}
+  th,td{font-size:12px}
+  input.qty{width:40px}
+  #summary{position:fixed;left:0;right:0;bottom:0;margin:0;border-radius:0;border-top:2px solid #1f3864;z-index:5;box-shadow:0 -2px 6px rgba(0,0,0,.25)}
+}
+</style>
+</head>
+<body>
+<header>
+  <b>ShopEase</b>
+  <span id="build">Build 1.0</span>
+  <span id="userbox"></span>
+</header>
+<main>
+  <section id="login">
+    <h2>Login</h2>
+    <div class="field"><label for="user">Username</label><input type="text" id="user"></div>
+    <div class="field"><label for="pass">Password</label><input type="password" id="pass"></div>
+    <button id="login-btn">Login</button>
+    <div class="msg" id="login-msg"></div>
+  </section>
+
+  <div id="app" hidden>
+    <details id="admin"><summary>Admin (test only)</summary>
+      <select id="adm-prod"></select>
+      Stock <input type="text" id="adm-stock" size="3">
+      <button id="adm-set">Set stock</button>
+    </details>
+
+    <section><h2>Products</h2><div id="products"></div></section>
+
+    <section>
+      <h2>Your cart</h2>
+      <div class="msg" id="cart-msg" role="alert"></div>
+      <table id="cart"></table>
+    </section>
+
+    <section>
+      <h2>Coupon</h2>
+      <input type="text" id="coupon" placeholder="Coupon code">
+      <button id="coupon-btn">Apply</button>
+      <div class="msg" id="coupon-msg"></div>
+      <div id="coupon-active"></div>
+    </section>
+
+    <section id="summary">
+      <div class="row"><span>Subtotal</span><span id="s-sub"></span></div>
+      <div class="row"><span>Discount</span><span id="s-disc"></span></div>
+      <div class="row"><span>GST (18%)</span><span id="s-gst"></span></div>
+      <div class="row"><span>Shipping</span><span id="s-ship"></span></div>
+      <div class="row total"><span>Total</span><span id="s-total"></span></div>
+    </section>
+
+    <section><button id="checkout-btn">Proceed to Checkout</button></section>
+
+    <section id="orders"><h2>My orders</h2><ul id="order-list"></ul></section>
+
+    <section id="payment" hidden>
+      <h2>Payment</h2>
+      <div class="field">
+        <label><input type="radio" name="method" value="upi" checked> UPI</label>
+        <label><input type="radio" name="method" value="card"> Card</label>
+        <label><input type="radio" name="method" value="cod" id="cod-radio"> Cash on Delivery</label>
+      </div>
+      <div id="f-upi" class="field"><label for="upi">UPI ID</label><input type="text" id="upi"></div>
+      <div id="f-card" hidden>
+        <div class="field"><label for="card">Card no.</label><input type="text" id="card" autocomplete="off"></div>
+        <div class="field"><label for="exp">Expiry</label><input type="text" id="exp" placeholder="MM/YY" size="6"></div>
+        <div class="field"><label for="cvv">CVV</label><input type="password" id="cvv" size="4"></div>
+      </div>
+      <div class="msg" id="cod-msg"></div>
+      <div class="msg" id="pay-msg" role="alert"></div>
+      <button id="pay-btn">Pay Now</button>
+    </section>
+  </div>
+</main>
+
+<script>
+const BUILD = "1.0";          // "1.0" or "1.1"
+const FIXED = BUILD === "1.1";      // build 1.1 contains the fixes for DEF-01, 02, 03 and 05
+const CONFIG = { gatewayTimeoutMs: 60000, sessionMs: 30 * 60000 };
+const PRODUCTS = [
+  { id: "p1", name: "Wireless Mouse", price: 450, stock: 25 },
+  { id: "p2", name: "Keyboard", price: 700, stock: 15 },
+  { id: "p3", name: "USB Cable", price: 150, stock: 50 },
+  { id: "p4", name: "Headphones", price: 1200, stock: 10 },
+  { id: "p5", name: "Webcam", price: 2500, stock: 8 }
+];
+const COUPONS = {
+  SAVE10:  { type: "pct",  value: 10, min: 500, cap: 200 },
+  FLAT50:  { type: "flat", value: 50, min: 0 },
+  OLDSALE: { type: "pct",  value: 20, min: 0, cap: 500, expires: "2026-08-31" }
+};
+const USERS = { tester01: "test123", tester02: "test123" };
+const $ = id => document.getElementById(id);
+const store = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v === null ? d : v; } catch (e) { return d; } },
+  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+};
+let session = store.get("session", null);
+let paying = false;
+let checkoutKey = null;
+
+const rs = n => "Rs." + n;
+const find = id => PRODUCTS.find(p => p.id === id);
+const stockOf = id => { const o = store.get("stock", {}); return o[id] !== undefined ? o[id] : find(id).stock; };
+const cartKey = () => "cart_" + session.user;
+const getCart = () => store.get(cartKey(), {});
+const saveCart = c => store.set(cartKey(), c);
+const getCoupon = () => store.get("coupon_" + session.user, null);
+const sessionExpired = () => !session || (Date.now() - session.last > CONFIG.sessionMs);
+function touch() { session.last = Date.now(); store.set("session", session); }
+function say(id, text, ok) { const e = $(id); e.textContent = text; e.className = "msg" + (ok ? " ok" : ""); }
+
+/* ---------- login / logout ---------- */
+function showLogin(msg) {
+  $("login").hidden = false; $("app").hidden = true; $("userbox").textContent = "";
+  say("login-msg", msg || "");
+}
+function login() {
+  const u = $("user").value.trim(), p = $("pass").value;
+  if (USERS[u] && USERS[u] === p) {
+    session = { user: u, last: Date.now() }; store.set("session", session);
+    $("pass").value = ""; say("login-msg", ""); start();
+  } else say("login-msg", "Invalid username or password");
+}
+function logout(msg) {
+  session = null; localStorage.removeItem("session"); paying = false; showLogin(msg);
+}
+function start() {
+  $("login").hidden = true; $("app").hidden = false;
+  $("userbox").innerHTML = session.user + ' <button id="logout-btn">Logout</button>';
+  $("logout-btn").onclick = () => logout("");
+  $("payment").hidden = true; paying = false;
+  renderAll();
+}
+
+/* ---------- cart ---------- */
+function addToCart(id) {
+  const c = getCart(); const q = (c[id] || 0) + 1;
+  if (FIXED && q > 10) { say("cart-msg", "Maximum 10 per item"); return; }
+  c[id] = q; saveCart(c); touch(); say("cart-msg", ""); renderAll();
+}
+function updateQty(id) {
+  const raw = $("qty-" + id).value.trim();
+  if (!/^-?\d+$/.test(raw)) { say("cart-msg", "Enter a valid whole number"); renderCart(); return; }
+  const q = parseInt(raw, 10);
+  if (q < 1) { say("cart-msg", "Minimum quantity is 1"); renderCart(); return; }
+  if (FIXED && q > 10) { say("cart-msg", "Maximum 10 per item"); renderCart(); return; }
+  const c = getCart(); c[id] = q; saveCart(c); touch(); say("cart-msg", ""); renderAll();
+}
+function removeItem(id) {
+  const c = getCart(); delete c[id]; saveCart(c); touch(); say("cart-msg", ""); renderAll();
+}
+
+/* ---------- totals ---------- */
+function compute() {
+  const c = getCart(); let subtotal = 0;
+  Object.keys(c).forEach(id => { subtotal += find(id).price * c[id]; });
+  let discount = 0; const code = getCoupon();
+  if (code && COUPONS[code] && subtotal >= COUPONS[code].min) {
+    const cp = COUPONS[code];
+    if (cp.type === "pct") {
+      discount = Math.round(subtotal * cp.value / 100);
+      if (FIXED && cp.cap) discount = Math.min(discount, cp.cap);   // DEF-02: cap ignored in build 1.0
+    } else discount = Math.min(cp.value, subtotal);
+  }
+  const taxable = subtotal - discount;
+  const gst = Math.round(taxable * 0.18);
+  const shipping = subtotal === 0 ? 0 : (subtotal >= 499 ? 0 : 40);
+  return { subtotal, discount, gst, shipping, total: taxable + gst + shipping, code };
+}
+function applyCoupon() {
+  const code = $("coupon").value.trim();
+  const cp = COUPONS[code];           // case-sensitive lookup (DEF-04, deferred to next release)
+  if (!cp) { say("coupon-msg", "Invalid coupon"); return; }
+  if (cp.expires && new Date().toISOString().slice(0, 10) > cp.expires) { say("coupon-msg", "Coupon expired"); return; }
+  const t = compute();
+  if (t.subtotal < cp.min) { say("coupon-msg", "Minimum order " + rs(cp.min) + " required"); return; }
+  store.set("coupon_" + session.user, code); touch();
+  say("coupon-msg", "Coupon " + code + " applied", true); renderAll();
+}
+
+/* ---------- rendering ---------- */
+function renderProducts() {
+  $("products").innerHTML = PRODUCTS.map(p =>
+    '<div class="prod"><b>' + p.name + '</b><br>' + rs(p.price) + '<br>Stock: <span id="stock-' + p.id + '">' + stockOf(p.id) +
+    '</span><br><button id="add-' + p.id + '">Add to Cart</button></div>').join("");
+  PRODUCTS.forEach(p => { $("add-" + p.id).onclick = () => addToCart(p.id); });
+  $("adm-prod").innerHTML = PRODUCTS.map(p => '<option value="' + p.id + '">' + p.name + '</option>').join("");
+}
+function renderCart() {
+  const c = getCart(); const ids = Object.keys(c);
+  if (!ids.length) { $("cart").innerHTML = "<tr><td>Your cart is empty</td></tr>"; return; }
+  $("cart").innerHTML = "<tr><th>Item</th><th>Price</th><th>Qty</th><th>Total</th><th></th></tr>" + ids.map(id => {
+    const p = find(id), bad = stockOf(id) < c[id];
+    return '<tr id="row-' + id + '"><td>' + p.name + (bad ? '<span class="oos" id="oos-' + id + '">Out of stock</span>' : "") + '</td><td>' + rs(p.price) +
+      '</td><td><input type="text" class="qty" id="qty-' + id + '" value="' + c[id] + '" size="3"> <button id="upd-' + id + '">Update</button></td><td id="line-' + id + '">' +
+      rs(p.price * c[id]) + '</td><td><button id="rm-' + id + '">Remove</button></td></tr>';
+  }).join("");
+  ids.forEach(id => { $("upd-" + id).onclick = () => updateQty(id); $("rm-" + id).onclick = () => removeItem(id); });
+}
+function renderSummary() {
+  const t = compute();
+  $("s-sub").textContent = rs(t.subtotal); $("s-disc").textContent = "-" + rs(t.discount);
+  $("s-gst").textContent = rs(t.gst); $("s-ship").textContent = t.shipping ? rs(t.shipping) : "FREE";
+  $("s-total").textContent = rs(t.total);
+  $("coupon-active").textContent = t.code && t.discount ? "Active coupon: " + t.code : (t.code ? "Active coupon: " + t.code + " (not applicable)" : "");
+  const cod = $("cod-radio"), over = t.total > 5000;
+  cod.disabled = over; say("cod-msg", over ? "Cash on Delivery is available only up to Rs.5000" : "");
+  if (over && cod.checked) document.querySelector('input[value="upi"]').checked = true;
+  syncMethod(); syncPayButton();
+}
+function renderOrders() {
+  const o = store.get("orders_" + session.user, []);
+  $("order-list").innerHTML = o.map(x => "<li>" + x.id + " | " + rs(x.total) + " | " + x.status + " | " + x.paidWith + "</li>").join("");
+}
+function renderAll() { renderProducts(); renderCart(); renderSummary(); renderOrders(); }
+function hasOos() { const c = getCart(); return Object.keys(c).some(id => stockOf(id) < c[id]); }
+function syncPayButton() { $("pay-btn").disabled = hasOos() || (FIXED && paying); }
+function method() { return document.querySelector('input[name="method"]:checked').value; }
+function syncMethod() { $("f-upi").hidden = method() !== "upi"; $("f-card").hidden = method() !== "card"; }
+
+/* ---------- checkout and payment ---------- */
+function proceed() {
+  if (sessionExpired()) { logout("Session expired. Please log in again."); return; }
+  touch();
+  if (!Object.keys(getCart()).length) { say("cart-msg", "Your cart is empty"); return; }
+  checkoutKey = "CK" + Date.now() + Math.random().toString(36).slice(2, 7);
+  say("pay-msg", ""); $("payment").hidden = false; renderAll();
+  if (hasOos()) say("cart-msg", "Some items are out of stock. Remove them to continue.");
+}
+const luhn = n => { let s = 0, d = false; for (let i = n.length - 1; i >= 0; i--) { let x = +n[i]; if (d) { x *= 2; if (x > 9) x -= 9; } s += x; d = !d; } return s % 10 === 0; };
+function validate(t) {
+  const m = method();
+  if (m === "upi" && !/^[a-z0-9._-]+@[a-z]+$/i.test($("upi").value.trim())) return "Invalid UPI ID";
+  if (m === "card") {
+    const n = $("card").value.replace(/\s+/g, "");
+    if (!/^\d{13,19}$/.test(n) || !luhn(n)) return "Invalid card number";
+    const e = $("exp").value.trim().match(/^(\d{2})\/(\d{2})$/);
+    if (!e || +e[1] < 1 || +e[1] > 12) return "Invalid expiry date";
+    const now = new Date(); const endOfMonth = new Date(2000 + +e[2], +e[1], 1);
+    if (endOfMonth <= now) return "Card expired";
+    if (!/^\d{3}$/.test($("cvv").value)) return "Invalid CVV";
+  }
+  if (m === "cod" && t.total > 5000) return "COD not available above Rs.5000";
+  return "";
+}
+function gateway(m) {
+  return new Promise((resolve, reject) => {
+    if (m === "upi") {
+      const v = $("upi").value.trim().toLowerCase();
+      if (v.startsWith("timeout@")) return;                       // gateway never responds
+      setTimeout(() => v.startsWith("fail@") ? reject(new Error("Payment failed: declined by bank")) : resolve(), 500);
+    } else setTimeout(resolve, m === "cod" ? 100 : 500);
+  });
+}
+function withTimeout(p) {
+  let timer; const t = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error("Payment timed out. Please try again.")), CONFIG.gatewayTimeoutMs); });
+  return Promise.race([p, t]).finally(() => clearTimeout(timer));
+}
+function createOrder(snap) {
+  const list = store.get("orders_" + session.user, []);
+  if (FIXED) { const dup = list.find(o => o.key === snap.key); if (dup) return dup; }   // idempotency key (DEF-03 fix)
+  const seq = store.get("orderSeq", 1040) + 1; store.set("orderSeq", seq);
+  const order = { id: "ORD-" + seq, key: snap.key, items: snap.items, total: snap.total, status: snap.method === "cod" ? "Payment pending (COD)" : "Paid", paidWith: snap.paidWith };
+  list.push(order); store.set("orders_" + session.user, list);
+  saveCart({}); localStorage.removeItem("coupon_" + session.user);
+  return order;
+}
+async function pay() {
+  if (sessionExpired()) { logout("Session expired. Please log in again."); return; }
+  touch();
+  if (FIXED && paying) return;
+  const t = compute();
+  if (!t.subtotal) { say("pay-msg", "Your cart is empty"); return; }
+  if (hasOos()) { say("pay-msg", "Remove out-of-stock items to continue"); return; }
+  const err = validate(t); if (err) { say("pay-msg", err); return; }
+  const m = method();
+  const snap = { key: checkoutKey, method: m, total: t.total, items: Object.entries(getCart()).map(([id, q]) => ({ id, qty: q })),
+    paidWith: m === "upi" ? "UPI " + $("upi").value.trim() : (m === "card" ? "Card ending " + $("card").value.replace(/\s+/g, "").slice(-4) : "COD") };
+  if (FIXED) { paying = true; syncPayButton(); }
+  say("pay-msg", "Processing payment...", true);
+  try {
+    await withTimeout(gateway(m));
+    const o = createOrder(snap);
+    say("pay-msg", "Order " + o.id + " placed. Total " + rs(o.total), true);
+    renderAll();
+  } catch (e) {
+    say("pay-msg", e.message || "Payment failed");
+  } finally {
+    paying = false; syncPayButton();
+  }
+}
+
+/* ---------- wiring ---------- */
+$("login-btn").onclick = login;
+$("coupon-btn").onclick = applyCoupon;
+$("checkout-btn").onclick = proceed;
+$("pay-btn").onclick = pay;
+$("adm-set").onclick = () => { const o = store.get("stock", {}); o[$("adm-prod").value] = parseInt($("adm-stock").value, 10) || 0; store.set("stock", o); renderAll(); };
+document.querySelectorAll('input[name="method"]').forEach(r => r.onchange = syncMethod);
+if (session && !sessionExpired()) start(); else showLogin(session ? "Session expired. Please log in again." : "");
+</script>
+</body>
+</html>
